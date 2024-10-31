@@ -173,6 +173,32 @@ app.post('/api/restaurants', authenticateToken, async (req: AuthRequest, res: Re
     }
 });
 
+app.get('/health', async (req: Request, res: Response) => {
+    try {
+        console.log('Health check requested');
+        
+        // Test database
+        const dbResult = await pool.query('SELECT NOW()');
+        
+        res.json({
+            status: 'ok',
+            timestamp: new Date().toISOString(),
+            environment: process.env.NODE_ENV,
+            database: 'connected',
+            dbTime: dbResult.rows[0].now,
+            uptime: process.uptime()
+        });
+    } catch (error) {
+        console.error('Health check failed:', error);
+        res.status(500).json({
+            status: 'error',
+            timestamp: new Date().toISOString(),
+            error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error',
+            environment: process.env.NODE_ENV
+        });
+    }
+});
+
 // Error handling middleware
 app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
     console.error('Unhandled error:', err);
@@ -194,24 +220,34 @@ const shutDown = async () => {
 
 // Start server function
 const startServer = async () => {
+    console.log('Starting server...');
+    console.log('Environment:', process.env.NODE_ENV);
+    console.log('Port:', process.env.PORT);
+    
     try {
-        // Test database connection before starting server
+        // Test database connection
+        console.log('Testing database connection...');
         await pool.query('SELECT NOW()');
-        console.log('Database connection verified');
-        
+        console.log('Database connection successful');
+
         const PORT = process.env.PORT || 3000;
-        app.listen(PORT, () => {
+        const server = app.listen(PORT, () => {
             console.log(`Server running on port ${PORT} in ${process.env.NODE_ENV} mode`);
-            // Log database URL with hidden credentials
-            const dbUrl = process.env.DATABASE_URL || '';
-            const sanitizedDbUrl = dbUrl.replace(/\/\/.*@/, '//[HIDDEN]@');
-            console.log('Connected to database:', sanitizedDbUrl);
+            console.log('All startup steps completed successfully');
         });
+
+        // Add error handler for the server
+        server.on('error', (error: any) => {
+            console.error('Server error:', error);
+            process.exit(1);
+        });
+
     } catch (error) {
-        console.error('Failed to start server:', error);
-        await shutDown();
+        console.error('Startup error:', error);
+        process.exit(1);
     }
 };
+
 
 // Handle process events
 process.on('SIGTERM', shutDown);
@@ -223,6 +259,18 @@ process.on('uncaughtException', async (error) => {
 process.on('unhandledRejection', (reason, promise) => {
     console.error('Unhandled Rejection at:', promise, 'reason:', reason);
 });
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+});
+
+process.on('uncaughtException', (error) => {
+    console.error('Uncaught Exception:', error);
+    process.exit(1);
+});
 
 // Start the server
-startServer();
+console.log('Initializing application...');
+startServer().catch(error => {
+    console.error('Failed to start application:', error);
+    process.exit(1);
+});
