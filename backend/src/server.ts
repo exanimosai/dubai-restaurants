@@ -49,15 +49,6 @@ const authenticateToken = (req: AuthRequest, res: Response, next: NextFunction) 
     }
 };
 
-// Database connection test
-pool.query('SELECT NOW()', (err) => {
-    if (err) {
-        console.error('Database connection error:', err);
-        process.exit(1);
-    }
-    console.log('Database connected successfully');
-});
-
 // Public routes
 app.get('/health', async (req: Request, res: Response) => {
     try {
@@ -66,13 +57,15 @@ app.get('/health', async (req: Request, res: Response) => {
         res.json({ 
             status: 'ok',
             database: 'connected',
-            timestamp: new Date().toISOString()
+            timestamp: new Date().toISOString(),
+            environment: process.env.NODE_ENV
         });
     } catch (error) {
         console.error('Health check error:', error);
         res.status(500).json({ 
             status: 'error',
-            error: 'Database connection failed'
+            error: 'Database connection failed',
+            details: process.env.NODE_ENV === 'development' ? error : undefined
         });
     }
 });
@@ -186,14 +179,50 @@ app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
     res.status(500).json({ error: 'An unexpected error occurred' });
 });
 
-const PORT = process.env.PORT || 3000;
+// Graceful shutdown function
+const shutDown = async () => {
+    console.log('Shutting down gracefully...');
+    try {
+        await pool.end();
+        console.log('Database pool has ended');
+        process.exit(0);
+    } catch (err) {
+        console.error('Error during shutdown:', err);
+        process.exit(1);
+    }
+};
 
-app.listen(PORT, () => {
-    console.log(`Server running on port ${PORT} in ${process.env.NODE_ENV} mode`);
-});
+// Start server function
+const startServer = async () => {
+    try {
+        // Test database connection before starting server
+        await pool.query('SELECT NOW()');
+        console.log('Database connection verified');
+        
+        const PORT = process.env.PORT || 3000;
+        app.listen(PORT, () => {
+            console.log(`Server running on port ${PORT} in ${process.env.NODE_ENV} mode`);
+            // Log database URL with hidden credentials
+            const dbUrl = process.env.DATABASE_URL || '';
+            const sanitizedDbUrl = dbUrl.replace(/\/\/.*@/, '//[HIDDEN]@');
+            console.log('Connected to database:', sanitizedDbUrl);
+        });
+    } catch (error) {
+        console.error('Failed to start server:', error);
+        await shutDown();
+    }
+};
 
-// Handle uncaught exceptions
-process.on('uncaughtException', (error) => {
+// Handle process events
+process.on('SIGTERM', shutDown);
+process.on('SIGINT', shutDown);
+process.on('uncaughtException', async (error) => {
     console.error('Uncaught Exception:', error);
-    process.exit(1);
+    await shutDown();
 });
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+});
+
+// Start the server
+startServer();
