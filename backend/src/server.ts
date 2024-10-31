@@ -179,16 +179,30 @@ app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
 const PORT = process.env.PORT || 3000;
 
 const startServer = async () => {
+    const PORT = process.env.PORT || 3000;
+    
     try {
+        console.log('Starting server initialization...');
+        console.log('Environment:', process.env.NODE_ENV);
+        console.log('Attempting to use port:', PORT);
+        console.log('Database URL:', process.env.DATABASE_URL ? 'Set' : 'Not set');
+
         // Test database connection
+        console.log('Testing database connection...');
         await pool.query('SELECT NOW()');
         console.log('Database connection successful');
 
-        app.listen(PORT, () => {
-            console.log(`Server running on port ${PORT} in ${process.env.NODE_ENV} mode`);
+        const server = app.listen(PORT, '0.0.0.0', () => {
+            console.log(`✅ Server running on port ${PORT} in ${process.env.NODE_ENV} mode`);
         });
+
+        server.on('error', (error: any) => {
+            console.error('Server error:', error);
+            process.exit(1);
+        });
+
     } catch (error) {
-        console.error('Failed to start server:', error);
+        console.error('Startup error:', error);
         process.exit(1);
     }
 };
