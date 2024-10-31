@@ -20,9 +20,7 @@ const app = express();
 
 // Middleware
 app.use(cors({
-    origin: process.env.NODE_ENV === 'production' 
-        ? ['http://localhost:3000'] // Add your frontend URL when ready
-        : true
+    origin: '*' // We'll configure this properly when we have a frontend
 }));
 app.use(helmet());
 app.use(morgan('dev'));
@@ -52,20 +50,20 @@ const authenticateToken = (req: AuthRequest, res: Response, next: NextFunction) 
 // Public routes
 app.get('/health', async (req: Request, res: Response) => {
     try {
-        // Test database connection
-        await pool.query('SELECT NOW()');
-        res.json({ 
+        const dbResult = await pool.query('SELECT NOW()');
+        res.json({
             status: 'ok',
-            database: 'connected',
             timestamp: new Date().toISOString(),
-            environment: process.env.NODE_ENV
+            environment: process.env.NODE_ENV,
+            database: 'connected',
+            dbTime: dbResult.rows[0].now
         });
     } catch (error) {
         console.error('Health check error:', error);
-        res.status(500).json({ 
+        res.status(500).json({
             status: 'error',
-            error: 'Database connection failed',
-            details: process.env.NODE_ENV === 'development' ? error : undefined
+            timestamp: new Date().toISOString(),
+            error: process.env.NODE_ENV === 'development' ? error : 'Internal server error'
         });
     }
 });
@@ -73,7 +71,6 @@ app.get('/health', async (req: Request, res: Response) => {
 // Auth routes
 app.post('/api/auth/login', async (req: Request, res: Response) => {
     try {
-        console.log('Login attempt received:', req.body.email);
         const { email, password } = req.body;
         
         if (!email || !password) {
@@ -86,7 +83,6 @@ app.post('/api/auth/login', async (req: Request, res: Response) => {
         );
 
         const user = result.rows[0];
-        console.log('User found:', user ? 'yes' : 'no');
         
         if (!user || !(await bcrypt.compare(password, user.password_hash))) {
             return res.status(401).json({ error: 'Invalid credentials' });
@@ -173,104 +169,39 @@ app.post('/api/restaurants', authenticateToken, async (req: AuthRequest, res: Re
     }
 });
 
-app.get('/health', async (req: Request, res: Response) => {
-    try {
-        console.log('Health check requested');
-        
-        // Test database
-        const dbResult = await pool.query('SELECT NOW()');
-        
-        res.json({
-            status: 'ok',
-            timestamp: new Date().toISOString(),
-            environment: process.env.NODE_ENV,
-            database: 'connected',
-            dbTime: dbResult.rows[0].now,
-            uptime: process.uptime()
-        });
-    } catch (error) {
-        console.error('Health check failed:', error);
-        res.status(500).json({
-            status: 'error',
-            timestamp: new Date().toISOString(),
-            error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error',
-            environment: process.env.NODE_ENV
-        });
-    }
-});
-
 // Error handling middleware
 app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
     console.error('Unhandled error:', err);
     res.status(500).json({ error: 'An unexpected error occurred' });
 });
 
-// Graceful shutdown function
-const shutDown = async () => {
-    console.log('Shutting down gracefully...');
-    try {
-        await pool.end();
-        console.log('Database pool has ended');
-        process.exit(0);
-    } catch (err) {
-        console.error('Error during shutdown:', err);
-        process.exit(1);
-    }
-};
+// Initialize server
+const PORT = process.env.PORT || 3000;
 
-// Start server function
 const startServer = async () => {
-    console.log('Starting server...');
-    console.log('Environment:', process.env.NODE_ENV);
-    console.log('Port:', process.env.PORT);
-    
     try {
         // Test database connection
-        console.log('Testing database connection...');
         await pool.query('SELECT NOW()');
         console.log('Database connection successful');
 
-        const PORT = process.env.PORT || 3000;
-        const server = app.listen(PORT, () => {
+        app.listen(PORT, () => {
             console.log(`Server running on port ${PORT} in ${process.env.NODE_ENV} mode`);
-            console.log('All startup steps completed successfully');
         });
-
-        // Add error handler for the server
-        server.on('error', (error: any) => {
-            console.error('Server error:', error);
-            process.exit(1);
-        });
-
     } catch (error) {
-        console.error('Startup error:', error);
+        console.error('Failed to start server:', error);
         process.exit(1);
     }
 };
 
+// Start server
+startServer();
 
-// Handle process events
-process.on('SIGTERM', shutDown);
-process.on('SIGINT', shutDown);
-process.on('uncaughtException', async (error) => {
-    console.error('Uncaught Exception:', error);
-    await shutDown();
-});
-process.on('unhandledRejection', (reason, promise) => {
-    console.error('Unhandled Rejection at:', promise, 'reason:', reason);
-});
-process.on('unhandledRejection', (reason, promise) => {
-    console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+// Handle uncaught errors
+process.on('unhandledRejection', (error) => {
+    console.error('Unhandled Rejection:', error);
 });
 
 process.on('uncaughtException', (error) => {
     console.error('Uncaught Exception:', error);
-    process.exit(1);
-});
-
-// Start the server
-console.log('Initializing application...');
-startServer().catch(error => {
-    console.error('Failed to start application:', error);
     process.exit(1);
 });

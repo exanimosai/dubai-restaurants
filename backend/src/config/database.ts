@@ -15,15 +15,11 @@ const poolConfig: PoolConfig = {
 
 export const pool = new Pool(poolConfig);
 
-// Connection event handlers
+// Log pool events
 pool.on('connect', () => {
     console.log('Database connected successfully');
 });
 
-pool.on('error', (err: Error & { code?: string }) => {
+pool.on('error', (err: Error) => {
     console.error('Unexpected database error:', err);
-    // Don't exit process on connection error
-    if (err.code === 'ECONNREFUSED') {
-        console.error('Database connection refused - retrying...');
-    }
 });
