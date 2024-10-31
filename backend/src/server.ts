@@ -1,5 +1,5 @@
 // src/server.ts
-import express from 'express';
+import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import morgan from 'morgan';
@@ -7,46 +7,93 @@ import jwt from 'jsonwebtoken';
 import bcrypt from 'bcrypt';
 import { pool } from './config/database';
 
+// Types
+interface AuthRequest extends Request {
+    user?: {
+        id: number;
+        email: string;
+        role: string;
+    };
+}
+
 const app = express();
 
 // Middleware
-app.use(cors());
+app.use(cors({
+    origin: process.env.NODE_ENV === 'production' 
+        ? ['http://localhost:3000'] // Add your frontend URL when ready
+        : true
+}));
 app.use(helmet());
 app.use(morgan('dev'));
 app.use(express.json());
 
 // Authentication middleware
-const authenticateToken = (req: any, res: any, next: any) => {
-    const authHeader = req.headers['authorization'];
-    const token = authHeader && authHeader.split(' ')[1];
+const authenticateToken = (req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+        const authHeader = req.headers['authorization'];
+        const token = authHeader && authHeader.split(' ')[1];
 
-    if (!token) {
-        return res.status(401).json({ error: 'Authentication required' });
+        if (!token) {
+            return res.status(401).json({ error: 'Authentication required' });
+        }
+
+        jwt.verify(token, process.env.JWT_SECRET!, (err: any, user: any) => {
+            if (err) return res.status(403).json({ error: 'Invalid token' });
+            req.user = user;
+            next();
+        });
+    } catch (error) {
+        console.error('Auth middleware error:', error);
+        res.status(500).json({ error: 'Authentication error' });
     }
-
-    jwt.verify(token, process.env.JWT_SECRET!, (err: any, user: any) => {
-        if (err) return res.status(403).json({ error: 'Invalid token' });
-        req.user = user;
-        next();
-    });
 };
 
+// Database connection test
+pool.query('SELECT NOW()', (err) => {
+    if (err) {
+        console.error('Database connection error:', err);
+        process.exit(1);
+    }
+    console.log('Database connected successfully');
+});
+
 // Public routes
-app.get('/health', (req, res) => {
-    res.json({ status: 'ok' });
+app.get('/health', async (req: Request, res: Response) => {
+    try {
+        // Test database connection
+        await pool.query('SELECT NOW()');
+        res.json({ 
+            status: 'ok',
+            database: 'connected',
+            timestamp: new Date().toISOString()
+        });
+    } catch (error) {
+        console.error('Health check error:', error);
+        res.status(500).json({ 
+            status: 'error',
+            error: 'Database connection failed'
+        });
+    }
 });
 
 // Auth routes
-app.post('/api/auth/login', async (req, res) => {
+app.post('/api/auth/login', async (req: Request, res: Response) => {
     try {
+        console.log('Login attempt received:', req.body.email);
         const { email, password } = req.body;
         
+        if (!email || !password) {
+            return res.status(400).json({ error: 'Email and password required' });
+        }
+
         const result = await pool.query(
             'SELECT * FROM users WHERE email = $1',
             [email]
         );
 
         const user = result.rows[0];
+        console.log('User found:', user ? 'yes' : 'no');
         
         if (!user || !(await bcrypt.compare(password, user.password_hash))) {
             return res.status(401).json({ error: 'Invalid credentials' });
@@ -71,16 +118,16 @@ app.post('/api/auth/login', async (req, res) => {
                 email: user.email, 
                 role: user.role,
                 name: user.name 
-            } 
+            }
         });
     } catch (error) {
         console.error('Login error:', error);
-        res.status(500).json({ error: 'Server error' });
+        res.status(500).json({ error: 'Server error during login' });
     }
 });
 
 // Protected routes
-app.get('/api/restaurants', authenticateToken, async (req, res) => {
+app.get('/api/restaurants', authenticateToken, async (req: AuthRequest, res: Response) => {
     try {
         const result = await pool.query(`
             SELECT 
@@ -99,13 +146,17 @@ app.get('/api/restaurants', authenticateToken, async (req, res) => {
     }
 });
 
-app.post('/api/restaurants', authenticateToken, async (req, res) => {
+app.post('/api/restaurants', authenticateToken, async (req: AuthRequest, res: Response) => {
     try {
         const { 
             name, category, price_range, vibe, 
             latitude, longitude, address, seating,
             is_licensed, has_shisha, google_place_id 
         } = req.body;
+
+        if (!name || !category) {
+            return res.status(400).json({ error: 'Name and category are required' });
+        }
 
         const result = await pool.query(`
             INSERT INTO restaurants (
@@ -119,7 +170,7 @@ app.post('/api/restaurants', authenticateToken, async (req, res) => {
             name, category, price_range, vibe,
             latitude, longitude, address, seating,
             is_licensed, has_shisha, google_place_id,
-            req.user.id
+            req.user?.id
         ]);
 
         res.status(201).json(result.rows[0]);
@@ -129,9 +180,20 @@ app.post('/api/restaurants', authenticateToken, async (req, res) => {
     }
 });
 
-// Start server
+// Error handling middleware
+app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
+    console.error('Unhandled error:', err);
+    res.status(500).json({ error: 'An unexpected error occurred' });
+});
+
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
+    console.log(`Server running on port ${PORT} in ${process.env.NODE_ENV} mode`);
+});
+
+// Handle uncaught exceptions
+process.on('uncaughtException', (error) => {
+    console.error('Uncaught Exception:', error);
+    process.exit(1);
 });
