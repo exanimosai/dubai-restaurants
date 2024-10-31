@@ -10,16 +10,22 @@ const poolConfig: PoolConfig = {
     connectionString: process.env.DATABASE_URL,
     ssl: isProduction ? {
         rejectUnauthorized: false
-    } : false
+    } : false,
+    max: 20,
+    idleTimeoutMillis: 30000,
+    connectionTimeoutMillis: 10000,
 };
 
 export const pool = new Pool(poolConfig);
 
-// Log pool events
 pool.on('connect', () => {
-    console.log('Database connected successfully');
+    console.log('New database connection established');
 });
 
-pool.on('error', (err: Error) => {
-    console.error('Unexpected database error:', err);
+pool.on('error', (err) => {
+    console.error('Unexpected error on idle database client', err);
+});
+
+pool.on('remove', () => {
+    console.log('Database connection removed from pool');
 });

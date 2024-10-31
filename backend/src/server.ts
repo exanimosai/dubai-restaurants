@@ -18,13 +18,51 @@ interface AuthRequest extends Request {
 
 const app = express();
 
+// Enhanced error logging
+const logError = (error: any, context: string) => {
+    console.error('====================');
+    console.error(`Error in ${context}:`);
+    console.error('Message:', error.message);
+    console.error('Stack:', error.stack);
+    console.error('====================');
+};
+
 // Middleware
-app.use(cors({
-    origin: '*' // We'll configure this properly when we have a frontend
-}));
+app.use(cors());
 app.use(helmet());
 app.use(morgan('dev'));
 app.use(express.json());
+
+// Basic route to test server is running
+app.get('/', (req: Request, res: Response) => {
+    res.json({ message: 'Server is running' });
+});
+
+// Health check endpoint with detailed diagnostics
+app.get('/health', async (req: Request, res: Response) => {
+    console.log('Health check requested');
+    try {
+        // Test database
+        const dbResult = await pool.query('SELECT NOW()');
+        
+        res.json({
+            status: 'ok',
+            checks: {
+                server: 'running',
+                database: 'connected',
+                timestamp: dbResult.rows[0].now,
+                environment: process.env.NODE_ENV
+            }
+        });
+    } catch (error) {
+        logError(error, 'Health Check');
+        res.status(500).json({
+            status: 'error',
+            message: 'Health check failed',
+            error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
+        });
+    }
+});
 
 // Authentication middleware
 const authenticateToken = (req: AuthRequest, res: Response, next: NextFunction) => {
@@ -42,35 +80,15 @@ const authenticateToken = (req: AuthRequest, res: Response, next: NextFunction) 
             next();
         });
     } catch (error) {
-        console.error('Auth middleware error:', error);
+        logError(error, 'Auth Middleware');
         res.status(500).json({ error: 'Authentication error' });
     }
 };
 
-// Public routes
-app.get('/health', async (req: Request, res: Response) => {
-    try {
-        const dbResult = await pool.query('SELECT NOW()');
-        res.json({
-            status: 'ok',
-            timestamp: new Date().toISOString(),
-            environment: process.env.NODE_ENV,
-            database: 'connected',
-            dbTime: dbResult.rows[0].now
-        });
-    } catch (error) {
-        console.error('Health check error:', error);
-        res.status(500).json({
-            status: 'error',
-            timestamp: new Date().toISOString(),
-            error: process.env.NODE_ENV === 'development' ? error : 'Internal server error'
-        });
-    }
-});
-
 // Auth routes
 app.post('/api/auth/login', async (req: Request, res: Response) => {
     try {
+        console.log('Login attempt received for:', req.body.email);
         const { email, password } = req.body;
         
         if (!email || !password) {
@@ -83,12 +101,12 @@ app.post('/api/auth/login', async (req: Request, res: Response) => {
         );
 
         const user = result.rows[0];
+        console.log('User found:', !!user);
         
         if (!user || !(await bcrypt.compare(password, user.password_hash))) {
             return res.status(401).json({ error: 'Invalid credentials' });
         }
 
-        // Update last login
         await pool.query(
             'UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE id = $1',
             [user.id]
@@ -110,7 +128,7 @@ app.post('/api/auth/login', async (req: Request, res: Response) => {
             }
         });
     } catch (error) {
-        console.error('Login error:', error);
+        logError(error, 'Login');
         res.status(500).json({ error: 'Server error during login' });
     }
 });
@@ -130,92 +148,78 @@ app.get('/api/restaurants', authenticateToken, async (req: AuthRequest, res: Res
         `);
         res.json(result.rows);
     } catch (error) {
-        console.error('Error fetching restaurants:', error);
+        logError(error, 'Get Restaurants');
         res.status(500).json({ error: 'Failed to fetch restaurants' });
     }
 });
 
-app.post('/api/restaurants', authenticateToken, async (req: AuthRequest, res: Response) => {
-    try {
-        const { 
-            name, category, price_range, vibe, 
-            latitude, longitude, address, seating,
-            is_licensed, has_shisha, google_place_id 
-        } = req.body;
-
-        if (!name || !category) {
-            return res.status(400).json({ error: 'Name and category are required' });
-        }
-
-        const result = await pool.query(`
-            INSERT INTO restaurants (
-                name, category, price_range, vibe, 
-                latitude, longitude, address, seating,
-                is_licensed, has_shisha, google_place_id,
-                added_by, last_modified_by
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $12)
-            RETURNING *
-        `, [
-            name, category, price_range, vibe,
-            latitude, longitude, address, seating,
-            is_licensed, has_shisha, google_place_id,
-            req.user?.id
-        ]);
-
-        res.status(201).json(result.rows[0]);
-    } catch (error) {
-        console.error('Error adding restaurant:', error);
-        res.status(500).json({ error: 'Failed to add restaurant' });
-    }
-});
-
-// Error handling middleware
+// Global error handler
 app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
-    console.error('Unhandled error:', err);
+    logError(err, 'Global Error Handler');
     res.status(500).json({ error: 'An unexpected error occurred' });
 });
 
-// Initialize server
-const PORT = process.env.PORT || 3000;
-
+// Server startup with retry logic
 const startServer = async () => {
-    const PORT = process.env.PORT || 3000;
+    let retries = 5;
     
+    while (retries) {
+        try {
+            console.log(`Starting server (attempt ${6 - retries}/5)...`);
+            console.log('Environment:', process.env.NODE_ENV);
+            console.log('Port:', process.env.PORT);
+            
+            // Test database connection
+            console.log('Testing database connection...');
+            await pool.query('SELECT NOW()');
+            console.log('✅ Database connection successful');
+
+            const PORT = process.env.PORT || 3000;
+            app.listen(PORT, '0.0.0.0', () => {
+                console.log(`✅ Server running on port ${PORT} in ${process.env.NODE_ENV} mode`);
+            });
+            
+            return; // Successfully started
+        } catch (error) {
+            logError(error, 'Server Startup');
+            retries -= 1;
+            if (retries) {
+                console.log(`Retrying in 5 seconds... (${retries} attempts remaining)`);
+                await new Promise(resolve => setTimeout(resolve, 5000));
+            } else {
+                console.error('Failed to start server after 5 attempts');
+                process.exit(1);
+            }
+        }
+    }
+};
+
+// Process handlers
+process.on('unhandledRejection', (reason: any) => {
+    logError(reason, 'Unhandled Rejection');
+});
+
+process.on('uncaughtException', (error: Error) => {
+    logError(error, 'Uncaught Exception');
+    process.exit(1);
+});
+
+// Graceful shutdown
+const shutDown = async () => {
+    console.log('Shutting down gracefully...');
     try {
-        console.log('Starting server initialization...');
-        console.log('Environment:', process.env.NODE_ENV);
-        console.log('Attempting to use port:', PORT);
-        console.log('Database URL:', process.env.DATABASE_URL ? 'Set' : 'Not set');
-
-        // Test database connection
-        console.log('Testing database connection...');
-        await pool.query('SELECT NOW()');
-        console.log('Database connection successful');
-
-        const server = app.listen(PORT, '0.0.0.0', () => {
-            console.log(`✅ Server running on port ${PORT} in ${process.env.NODE_ENV} mode`);
-        });
-
-        server.on('error', (error: any) => {
-            console.error('Server error:', error);
-            process.exit(1);
-        });
-
+        await pool.end();
+        console.log('Database connections closed');
+        process.exit(0);
     } catch (error) {
-        console.error('Startup error:', error);
+        logError(error, 'Shutdown');
         process.exit(1);
     }
 };
 
+process.on('SIGTERM', shutDown);
+process.on('SIGINT', shutDown);
+
 // Start server
+console.log('Initializing application...');
 startServer();
-
-// Handle uncaught errors
-process.on('unhandledRejection', (error) => {
-    console.error('Unhandled Rejection:', error);
-});
-
-process.on('uncaughtException', (error) => {
-    console.error('Uncaught Exception:', error);
-    process.exit(1);
-});
