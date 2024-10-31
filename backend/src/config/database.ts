@@ -1,25 +1,26 @@
 // src/config/database.ts
-import { Pool } from 'pg';
+import { Pool, PoolConfig } from 'pg';
 import dotenv from 'dotenv';
 
 dotenv.config();
 
 const isProduction = process.env.NODE_ENV === 'production';
 
-export const pool = new Pool({
+const poolConfig: PoolConfig = {
     connectionString: process.env.DATABASE_URL,
     ssl: isProduction ? {
-        rejectUnauthorized: false,
-        require: true
+        rejectUnauthorized: false
     } : false
-});
+};
 
-// Test database connection on startup
+export const pool = new Pool(poolConfig);
+
+// Connection event handlers
 pool.on('connect', () => {
     console.log('Database connected successfully');
 });
 
-pool.on('error', (err) => {
+pool.on('error', (err: Error & { code?: string }) => {
     console.error('Unexpected database error:', err);
     // Don't exit process on connection error
     if (err.code === 'ECONNREFUSED') {
