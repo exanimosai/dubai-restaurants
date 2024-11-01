@@ -16,14 +16,23 @@ interface AuthRequest extends Request {
     };
 }
 
+interface ErrorWithMessage extends Error {
+    message: string;
+    stack?: string;
+}
+
 const app = express();
 
 // Enhanced error logging
-const logError = (error: any, context: string) => {
+const logError = (error: ErrorWithMessage | unknown, context: string) => {
     console.error('====================');
     console.error(`Error in ${context}:`);
-    console.error('Message:', error.message);
-    console.error('Stack:', error.stack);
+    if (error instanceof Error) {
+        console.error('Message:', error.message);
+        console.error('Stack:', error.stack);
+    } else {
+        console.error('Unknown error:', error);
+    }
     console.error('====================');
 };
 
@@ -74,7 +83,7 @@ const authenticateToken = (req: AuthRequest, res: Response, next: NextFunction) 
             return res.status(401).json({ error: 'Authentication required' });
         }
 
-        jwt.verify(token, process.env.JWT_SECRET!, (err: any, user: any) => {
+        jwt.verify(token, process.env.JWT_SECRET!, (err: Error | null, user: any) => {
             if (err) return res.status(403).json({ error: 'Invalid token' });
             req.user = user;
             next();
@@ -174,7 +183,7 @@ const startServer = async () => {
             await pool.query('SELECT NOW()');
             console.log('✅ Database connection successful');
 
-            const PORT = process.env.PORT || 3000;
+            const PORT = parseInt(process.env.PORT || '3000', 10);
             app.listen(PORT, '0.0.0.0', () => {
                 console.log(`✅ Server running on port ${PORT} in ${process.env.NODE_ENV} mode`);
             });
@@ -195,7 +204,7 @@ const startServer = async () => {
 };
 
 // Process handlers
-process.on('unhandledRejection', (reason: any) => {
+process.on('unhandledRejection', (reason: unknown) => {
     logError(reason, 'Unhandled Rejection');
 });
 
