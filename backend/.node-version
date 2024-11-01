@@ -1,1 +1,2 @@
+cd ~/dubai-restaurants/backend
 echo "18.17.0" > .node-version

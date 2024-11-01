@@ -3,8 +3,7 @@
   "version": "1.0.0",
   "main": "dist/server.js",
   "engines": {
-    "node": "18.17.0",
-    "npm": "9.6.7"
+    "node": "18.17.0"
   },
   "scripts": {
     "start": "node dist/server.js",
