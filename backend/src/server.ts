@@ -21,18 +21,34 @@ interface ErrorWithMessage extends Error {
     stack?: string;
 }
 
+const isErrorWithMessage = (error: unknown): error is ErrorWithMessage => {
+    return (
+        typeof error === 'object' &&
+        error !== null &&
+        'message' in error &&
+        typeof (error as Record<string, unknown>).message === 'string'
+    );
+};
+
+const toErrorWithMessage = (maybeError: unknown): ErrorWithMessage => {
+    if (isErrorWithMessage(maybeError)) return maybeError;
+
+    try {
+        return new Error(JSON.stringify(maybeError));
+    } catch {
+        return new Error(String(maybeError));
+    }
+};
+
 const app = express();
 
 // Enhanced error logging
-const logError = (error: ErrorWithMessage | unknown, context: string) => {
+const logError = (error: unknown, context: string) => {
+    const errorWithMessage = toErrorWithMessage(error);
     console.error('====================');
     console.error(`Error in ${context}:`);
-    if (error instanceof Error) {
-        console.error('Message:', error.message);
-        console.error('Stack:', error.stack);
-    } else {
-        console.error('Unknown error:', error);
-    }
+    console.error('Message:', errorWithMessage.message);
+    console.error('Stack:', errorWithMessage.stack);
     console.error('====================');
 };
 
@@ -43,15 +59,14 @@ app.use(morgan('dev'));
 app.use(express.json());
 
 // Basic route to test server is running
-app.get('/', (req: Request, res: Response) => {
+app.get('/', (_req: Request, res: Response) => {
     res.json({ message: 'Server is running' });
 });
 
 // Health check endpoint with detailed diagnostics
-app.get('/health', async (req: Request, res: Response) => {
+app.get('/health', async (_req: Request, res: Response) => {
     console.log('Health check requested');
     try {
-        // Test database
         const dbResult = await pool.query('SELECT NOW()');
         
         res.json({
@@ -63,12 +78,14 @@ app.get('/health', async (req: Request, res: Response) => {
                 environment: process.env.NODE_ENV
             }
         });
-    } catch (error) {
+    } catch (error: unknown) {
         logError(error, 'Health Check');
         res.status(500).json({
             status: 'error',
             message: 'Health check failed',
-            error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
+            error: process.env.NODE_ENV === 'development' 
+                ? toErrorWithMessage(error).message 
+                : 'Internal server error'
         });
     }
 });
@@ -88,7 +105,7 @@ const authenticateToken = (req: AuthRequest, res: Response, next: NextFunction) 
             req.user = user;
             next();
         });
-    } catch (error) {
+    } catch (error: unknown) {
         logError(error, 'Auth Middleware');
         res.status(500).json({ error: 'Authentication error' });
     }
@@ -136,9 +153,14 @@ app.post('/api/auth/login', async (req: Request, res: Response) => {
                 name: user.name 
             }
         });
-    } catch (error) {
+    } catch (error: unknown) {
         logError(error, 'Login');
-        res.status(500).json({ error: 'Server error during login' });
+        res.status(500).json({ 
+            error: 'Server error during login',
+            details: process.env.NODE_ENV === 'development' 
+                ? toErrorWithMessage(error).message 
+                : undefined
+        });
     }
 });
 
@@ -156,20 +178,30 @@ app.get('/api/restaurants', authenticateToken, async (req: AuthRequest, res: Res
             ORDER BY r.created_at DESC
         `);
         res.json(result.rows);
-    } catch (error) {
+    } catch (error: unknown) {
         logError(error, 'Get Restaurants');
-        res.status(500).json({ error: 'Failed to fetch restaurants' });
+        res.status(500).json({ 
+            error: 'Failed to fetch restaurants',
+            details: process.env.NODE_ENV === 'development' 
+                ? toErrorWithMessage(error).message 
+                : undefined
+        });
     }
 });
 
 // Global error handler
-app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
+app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
     logError(err, 'Global Error Handler');
-    res.status(500).json({ error: 'An unexpected error occurred' });
+    res.status(500).json({ 
+        error: 'An unexpected error occurred',
+        details: process.env.NODE_ENV === 'development' 
+            ? toErrorWithMessage(err).message 
+            : undefined
+    });
 });
 
 // Server startup with retry logic
-const startServer = async () => {
+const startServer = async (): Promise<void> => {
     let retries = 5;
     
     while (retries) {
@@ -189,7 +221,7 @@ const startServer = async () => {
             });
             
             return; // Successfully started
-        } catch (error) {
+        } catch (error: unknown) {
             logError(error, 'Server Startup');
             retries -= 1;
             if (retries) {
@@ -208,19 +240,19 @@ process.on('unhandledRejection', (reason: unknown) => {
     logError(reason, 'Unhandled Rejection');
 });
 
-process.on('uncaughtException', (error: Error) => {
+process.on('uncaughtException', (error: unknown) => {
     logError(error, 'Uncaught Exception');
     process.exit(1);
 });
 
 // Graceful shutdown
-const shutDown = async () => {
+const shutDown = async (): Promise<void> => {
     console.log('Shutting down gracefully...');
     try {
         await pool.end();
         console.log('Database connections closed');
         process.exit(0);
-    } catch (error) {
+    } catch (error: unknown) {
         logError(error, 'Shutdown');
         process.exit(1);
     }
@@ -231,4 +263,7 @@ process.on('SIGINT', shutDown);
 
 // Start server
 console.log('Initializing application...');
-startServer();
+startServer().catch((error: unknown) => {
+    logError(error, 'Server Initialization');
+    process.exit(1);
+});
