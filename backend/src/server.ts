@@ -6,6 +6,7 @@ import morgan from 'morgan';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcrypt';
 import { pool } from './config/database';
+import placesRoutes from './routes/places';
 
 // Types
 interface AuthRequest extends Request {
@@ -57,7 +58,7 @@ app.use(cors());
 app.use(helmet());
 app.use(morgan('dev'));
 app.use(express.json());
-
+app.use('/api/places', placesRoutes);
 // Basic route to test server is running
 app.get('/', (_req: Request, res: Response) => {
     res.json({ message: 'Server is running' });
