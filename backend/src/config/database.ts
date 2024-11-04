@@ -4,13 +4,11 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
-const isProduction = process.env.NODE_ENV === 'production';
-
 const poolConfig: PoolConfig = {
     connectionString: process.env.DATABASE_URL,
-    ssl: isProduction ? {
+    ssl: {
         rejectUnauthorized: false
-    } : false,
+    },
     max: 20,
     idleTimeoutMillis: 30000,
     connectionTimeoutMillis: 10000,
@@ -19,13 +17,9 @@ const poolConfig: PoolConfig = {
 export const pool = new Pool(poolConfig);
 
 pool.on('connect', () => {
-    console.log('New database connection established');
+    console.log('Database connected');
 });
 
 pool.on('error', (err) => {
-    console.error('Unexpected error on idle database client', err);
-});
-
-pool.on('remove', () => {
-    console.log('Database connection removed from pool');
+    console.error('Unexpected error on idle client', err);
 });

@@ -1,0 +1,14 @@
+
+Restaurant Statistics (2024-11-04T22:42:27.692Z)
+================================================
+Total Restaurants: 67
+
+Breakdown by Category:
+Cafe: 19 (28%)
+Bar: 14 (21%)
+Restaurant: 34 (51%)
+
+Average Rating: NaN
+Licensed Venues: 38 (57%)
+Shisha Available: 6 (9%)
+        
