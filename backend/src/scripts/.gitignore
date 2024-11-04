@@ -1,0 +1,3 @@
+# Case sensitivity conflicts
+*[[:upper:]]*.ts
+*[[:upper:]]*.js
