@@ -188,4 +188,107 @@ router.get('/test-db', authenticateToken, async (req, res) => {
     }
 });
 
-export default router;
+// Get single restaurant
+router.get('/:id', authenticateToken, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const result = await dbPool.query(
+        'SELECT * FROM restaurants WHERE id = $1',
+        [id]
+      );
+  
+      if (result.rows.length === 0) {
+        return res.status(404).json({ error: 'Restaurant not found' });
+      }
+  
+      res.json(result.rows[0]);
+    } catch (error: any) {
+      console.error('Error fetching restaurant:', error);
+      res.status(500).json({ error: 'Failed to fetch restaurant' });
+    }
+  });
+  
+  // Update restaurant
+  router.put('/:id', authenticateToken, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const {
+        name,
+        category,
+        price_range,
+        vibe,
+        latitude,
+        longitude,
+        address,
+        seating,
+        is_licensed,
+        has_shisha,
+        google_place_id
+      } = req.body;
+  
+      // Verify restaurant exists
+      const checkResult = await dbPool.query(
+        'SELECT id FROM restaurants WHERE id = $1',
+        [id]
+      );
+  
+      if (checkResult.rows.length === 0) {
+        return res.status(404).json({ error: 'Restaurant not found' });
+      }
+  
+      const result = await dbPool.query(
+        `UPDATE restaurants 
+         SET name = $1, category = $2, price_range = $3, vibe = $4,
+             latitude = $5, longitude = $6, address = $7, seating = $8,
+             is_licensed = $9, has_shisha = $10, google_place_id = $11,
+             updated_at = CURRENT_TIMESTAMP
+         WHERE id = $12
+         RETURNING *`,
+        [
+          name,
+          category,
+          price_range,
+          vibe,
+          latitude,
+          longitude,
+          address,
+          seating,
+          is_licensed,
+          has_shisha,
+          google_place_id,
+          id
+        ]
+      );
+  
+      res.json(result.rows[0]);
+    } catch (error: any) {
+      console.error('Error updating restaurant:', error);
+      res.status(500).json({ error: 'Failed to update restaurant' });
+    }
+  });
+  
+  // Delete restaurant
+  router.delete('/:id', authenticateToken, async (req, res) => {
+    try {
+      const { id } = req.params;
+      
+      // Verify restaurant exists
+      const checkResult = await dbPool.query(
+        'SELECT id FROM restaurants WHERE id = $1',
+        [id]
+      );
+  
+      if (checkResult.rows.length === 0) {
+        return res.status(404).json({ error: 'Restaurant not found' });
+      }
+  
+      await dbPool.query('DELETE FROM restaurants WHERE id = $1', [id]);
+      
+      res.status(204).send();
+    } catch (error: any) {
+      console.error('Error deleting restaurant:', error);
+      res.status(500).json({ error: 'Failed to delete restaurant' });
+    }
+  });
+  
+  export default router;
