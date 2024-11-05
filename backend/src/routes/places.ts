@@ -76,7 +76,7 @@ router.post('/', authenticateToken, async (req, res) => {
 
         console.log('Attempting database insertion...');
         
-        const result = await pool.query(
+        const result = await Pool.query(
             `INSERT INTO restaurants 
             (name, category, price_range, vibe, latitude, longitude, address, 
              seating, is_licensed, has_shisha, google_place_id, added_by)
@@ -127,7 +127,7 @@ export default router;
 
 router.get('/test-db', authenticateToken, async (req, res) => {
     try {
-        const result = await pool.query('SELECT NOW()');
+        const result = await Pool.query('SELECT NOW()');
         res.json({ 
             success: true, 
             timestamp: result.rows[0].now,
