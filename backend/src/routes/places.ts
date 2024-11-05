@@ -36,6 +36,8 @@ router.get('/details/:placeId', authenticateToken, async (req, res) => {
 // New POST endpoint for creating restaurants
 router.post('/', authenticateToken, async (req, res) => {
     try {
+        console.log('Received restaurant creation request:', req.body);
+        
         const {
             name,
             category,
@@ -51,28 +53,91 @@ router.post('/', authenticateToken, async (req, res) => {
         } = req.body;
 
         // Validate required fields
-        if (!name || !address || !latitude || !longitude) {
-            return res.status(400).json({ error: 'Missing required fields' });
+        const requiredFields = {
+            name,
+            category,
+            latitude,
+            longitude,
+            address,
+            seating
+        };
+
+        const missingFields = Object.entries(requiredFields)
+            .filter(([_, value]) => !value)
+            .map(([key]) => key);
+
+        if (missingFields.length > 0) {
+            console.log('Missing required fields:', missingFields);
+            return res.status(400).json({ 
+                error: 'Missing required fields', 
+                missingFields 
+            });
         }
 
-        // Assuming you have a database connection pool
-        const pool = new Pool(); // Configure this with your database credentials
-
+        console.log('Attempting database insertion...');
+        
         const result = await pool.query(
             `INSERT INTO restaurants 
             (name, category, price_range, vibe, latitude, longitude, address, 
-             seating, is_licensed, has_shisha, google_place_id)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+             seating, is_licensed, has_shisha, google_place_id, added_by)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
             RETURNING *`,
-            [name, category, price_range, vibe, latitude, longitude, address,
-             seating, is_licensed, has_shisha, google_place_id]
+            [
+                name,
+                category,
+                price_range,
+                vibe,
+                latitude,
+                longitude,
+                address,
+                seating,
+                is_licensed,
+                has_shisha,
+                google_place_id,
+                (req as any).user?.id  // Get user ID from auth token
+            ]
         );
 
+        console.log('Restaurant created successfully:', result.rows[0]);
         res.status(201).json(result.rows[0]);
-    } catch (error) {
-        console.error('Create restaurant error:', error);
-        res.status(500).json({ error: 'Failed to create restaurant' });
+    } catch (error: any) {
+        console.error('Detailed create restaurant error:', {
+            message: error.message,
+            stack: error.stack,
+            code: error.code,  // PostgreSQL error code if applicable
+            detail: error.detail  // PostgreSQL error detail if applicable
+        });
+        
+        // Send appropriate error response based on error type
+        if (error.code === '23505') {  // Unique violation
+            res.status(409).json({ 
+                error: 'Restaurant already exists',
+                detail: error.detail 
+            });
+        } else {
+            res.status(500).json({ 
+                error: 'Failed to create restaurant',
+                detail: process.env.NODE_ENV === 'development' ? error.message : undefined
+            });
+        }
     }
 });
 
 export default router;
+
+router.get('/test-db', authenticateToken, async (req, res) => {
+    try {
+        const result = await pool.query('SELECT NOW()');
+        res.json({ 
+            success: true, 
+            timestamp: result.rows[0].now,
+            user: (req as any).user 
+        });
+    } catch (error: any) {
+        console.error('Database test error:', {
+            message: error.message,
+            code: error.code
+        });
+        res.status(500).json({ error: 'Database connection failed' });
+    }
+});
