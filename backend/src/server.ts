@@ -59,7 +59,7 @@ app.use(helmet());
 app.use(morgan('dev'));
 app.use(express.json());
 app.use('/api/places', placesRoutes);
-app.use('/api/restaurants', placesRouter);
+app.use('/api/restaurants', placesRoutes);
 
 // Basic route to test server is running
 app.get('/', (_req: Request, res: Response) => {
