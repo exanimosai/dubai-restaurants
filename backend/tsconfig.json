@@ -2,7 +2,7 @@
   "compilerOptions": {
     "target": "es2017",
     "module": "commonjs",
-    "lib": ["es2017", "es2018", "esnext", "dom"],
+    "lib": ["es2017", "es2018", "esnext", "dom","esnext.asynciterable"],
     "outDir": "./dist",
     "rootDir": "./src",
     "strict": true,
@@ -14,7 +14,9 @@
     "declaration": true,
     "allowJs": true,
     "noImplicitAny": false,
-    "types": ["node", "express"]
+    "types": ["node", "express"],
+    "typeRoots": ["./node_modules/@types", "./src/types"],
+    "forceConsistentCasingInFileNames": true
   },
   "include": ["src/**/*"],
   "exclude": ["node_modules", "dist"]
