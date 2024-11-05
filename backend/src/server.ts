@@ -53,8 +53,18 @@ const logError = (error: unknown, context: string) => {
     console.error('====================');
 };
 
+const corsOptions = {
+    origin: [
+      'https://dubai-restaurants-frontend.onrender.com',
+      'http://localhost:3000' // For local development
+    ],
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
+    credentials: true
+  };
+
 // Middleware
-app.use(cors());
+app.use(cors(corsOptions));
 app.use(helmet());
 app.use(morgan('dev'));
 app.use(express.json());
