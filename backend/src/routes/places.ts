@@ -2,6 +2,8 @@ import express from 'express';
 import { authenticateToken } from '../middleware/auth';
 import GooglePlacesService from '../services/googlePlaces';
 import { Pool } from 'pg'; // Add this if not already imported
+import { pool as dbPool } from '../config/database';  // Renamed import
+import { Pool, QueryResult as PgQueryResult } from 'pg';  // Updated import
 
 const router = express.Router();
 const placesService = new GooglePlacesService(process.env.GOOGLE_MAPS_API_KEY!);
@@ -52,9 +54,6 @@ interface Restaurant {
     updated_at?: Date;
 }
 
-// Ensure pool is properly typed
-const dbPool = pool as Pool;
-
 // New POST endpoint for creating restaurants
 router.post('/', authenticateToken, async (req, res) => {
     try {
@@ -98,7 +97,7 @@ router.post('/', authenticateToken, async (req, res) => {
 
         console.log('Attempting database insertion...');
         
-        const result: QueryResult = await dbPool.query(
+        const result: PgQueryResult = await dbPool.query(
             `INSERT INTO restaurants 
             (name, category, price_range, vibe, latitude, longitude, address, 
              seating, is_licensed, has_shisha, google_place_id, added_by)
@@ -175,7 +174,7 @@ router.get('/details/:placeId', authenticateToken, async (req, res) => {
 // Test database connection route
 router.get('/test-db', authenticateToken, async (req, res) => {
     try {
-        const result: QueryResult = await dbPool.query('SELECT NOW()');
+        const result: PgQueryResult = await dbPool.query('SELECT NOW()');
         res.json({ 
             success: true, 
             timestamp: result.rows[0].now,
