@@ -1,7 +1,6 @@
 import express from 'express';
 import { authenticateToken } from '../middleware/auth';
 import GooglePlacesService from '../services/googlePlaces';
-import { Pool } from 'pg'; // Add this if not already imported
 import { pool as dbPool } from '../config/database';  // Renamed import
 import { Pool, QueryResult as PgQueryResult } from 'pg';  // Updated import
 
